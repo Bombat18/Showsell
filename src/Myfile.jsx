@@ -9,60 +9,35 @@ import {
   onSnapshot,
   query,
 } from "firebase/firestore";
-import { FaEdit, FaTrash, FaSearch } from "react-icons/fa";
-
-// Notification Component
-const Notification = ({ message, type }) => {
-  if (!message) return null;
-
-  const styles = {
-    success: "bg-green-100 border-green-400 text-green-700",
-    error: "bg-red-100 border-red-400 text-red-700",
-  };
-
-  return (
-    <div
-      className={`border px-4 py-3 rounded relative mb-4 ${styles[type]}`}
-      role="alert"
-    >
-      <span className="block sm:inline">{message}</span>
-    </div>
-  );
-};
+import { FaSearch, FaTimes } from "react-icons/fa";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 const Myfile = () => {
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
+  const [selectedProduct, setSelectedProduct] = useState(null);
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
-  const [editId, setEditId] = useState(null);
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [notification, setNotification] = useState({ type: "", message: "" });
+  const [showModal, setShowModal] = useState(false);
 
   const productCollection = collection(db, "products");
 
   // Real-time fetching
   useEffect(() => {
-    setLoading(true);
     const q = query(productCollection);
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setProducts(data);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Error fetching real-time data:", error);
-        setNotification({ type: "error", message: "Could not fetch products." });
-        setLoading(false);
-      }
-    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setProducts(data);
+      setFilteredProducts(data);
+    });
     return () => unsubscribe();
   }, []);
 
-  // Filter products on search
+  // Search filter
   useEffect(() => {
     const filtered = products.filter((p) =>
       p.name.toLowerCase().includes(search.toLowerCase())
@@ -70,188 +45,200 @@ const Myfile = () => {
     setFilteredProducts(filtered);
   }, [search, products]);
 
-  // Notification auto-hide
-  useEffect(() => {
-    if (notification.message) {
-      const timer = setTimeout(() => {
-        setNotification({ type: "", message: "" });
-      }, 3000);
-      return () => clearTimeout(timer);
+  // Open modal (Add or Edit)
+  const openModal = (product = null) => {
+    if (product) {
+      setSelectedProduct(product);
+      setName(product.name);
+      setPrice(product.price);
+    } else {
+      setSelectedProduct(null);
+      setName("");
+      setPrice("");
     }
-  }, [notification]);
-
-  const clearForm = () => {
-    setName("");
-    setPrice("");
-    setEditId(null);
+    setShowModal(true);
   };
 
-  // Add / Update product
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const clearModal = () => {
+    setSelectedProduct(null);
+    setName("");
+    setPrice("");
+    setShowModal(false);
+  };
+
+  // Add or Update product
+  const handleSubmit = async () => {
     if (!name || !price) {
-      setNotification({ type: "error", message: "Please enter name and price." });
+      toast.error("Please fill all fields!");
       return;
     }
-    setLoading(true);
+
     try {
-      if (editId) {
-        const docRef = doc(db, "products", editId);
-        await updateDoc(docRef, { name, price: Number(price) });
-        setNotification({ type: "success", message: "Product updated!" });
+      if (selectedProduct) {
+        // Update
+        await updateDoc(doc(db, "products", selectedProduct.id), {
+          name,
+          price: Number(price),
+        });
+       toast.info("Product updated successfully!", { className: "Toastify__toast--update" });
       } else {
+        // Add
         await addDoc(productCollection, { name, price: Number(price) });
-        setNotification({ type: "success", message: "Product added!" });
+        toast.success("Product added successfully!", { className: "Toastify__toast--add" });
       }
-      clearForm();
-    } catch (error) {
-      console.error("Error adding/updating product:", error);
-      setNotification({ type: "error", message: "Failed to save product." });
+      clearModal();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to save product!");
     }
-    setLoading(false);
   };
 
   // Delete product
-  const handleDelete = async (id) => {
-    setLoading(true);
+  const handleDelete = async () => {
+    if (!selectedProduct) return;
     try {
-      const docRef = doc(db, "products", id);
-      await deleteDoc(docRef);
-      setNotification({ type: "success", message: "Product deleted." });
-    } catch (error) {
-      console.error("Error deleting product:", error);
-      setNotification({ type: "error", message: "Failed to delete product." });
+      await deleteDoc(doc(db, "products", selectedProduct.id));
+     toast.warn("Product deleted successfully!", { className: "Toastify__toast--delete" });
+      clearModal();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete product!");
     }
-    setLoading(false);
-  };
-
-  // Edit product
-  const handleEdit = (product) => {
-    setEditId(product.id);
-    setName(product.name);
-    setPrice(product.price);
   };
 
   return (
-    <div className="min-h-screen  py-3">
-      <div className="max-w-3xl mx-auto p-6  rounded-lg ">
-        <h2 className="text-2xl font-bold text-center text-black mb-6">
+    <div className="min-h-screen py-6 px-4">
+      <ToastContainer position="bottom-right" autoClose={3000} />
+      <div className="max-w-3xl mx-auto">
+        <h2 className="text-2xl font-bold text-center mb-6 bg-white p-2 rounded-4xl text-blue-600">
           🛍️ ତେଜରାତି ବିକ୍ରୟ ମୂଲ୍ୟ
         </h2>
 
-        {/* Notification */}
-        <Notification message={notification.message} type={notification.type} />
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex  sm:flex-row gap-3">
+        {/* Add & Search */}
+        <div className="flex justify-between mb-4">
+          <button
+            onClick={() => openModal()}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+          >
+            + Add
+          </button>
+          <div className="relative ">
             <input
               type="text"
-              placeholder="ତେଜରାତି ନାମ"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={loading}
-              className="w-full sm:w-1/2 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100"
+              placeholder="Search by ତେଜରାତି ନାମ..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full border px-8 py-2 rounded-lg bg-white"
             />
-            <input
-              type="number"
-              placeholder="ବିକ୍ରୟ ମୂଲ୍ୟ"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              disabled={loading}
-              className="w-full sm:w-1/2 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100"
-            />
+            <FaSearch className="absolute top-3 left-3 text-gray-400" />
           </div>
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              disabled={loading}
-              className={`w-full px-4 py-2 rounded-lg text-white font-semibold transition-colors duration-200 ${
-                editId
-                  ? "bg-yellow-500 hover:bg-yellow-600"
-                  : "bg-blue-500 hover:bg-blue-600"
-              } disabled:bg-gray-400 disabled:cursor-not-allowed`}
-            >
-              {loading ? "Saving..." : editId ? "Update Product" : "Add Product"}
-            </button>
-            {editId && (
-              <button
-                type="button"
-                onClick={clearForm}
-                disabled={loading}
-                className="w-1/3 px-4 py-2 rounded-lg text-white font-semibold bg-gray-500 hover:bg-gray-600 transition-colors duration-200 disabled:bg-gray-400"
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
-
-        {/* Search */}
-        <div className="mt-6 relative">
-          <input
-            type="text"
-            placeholder="Search by ତେଜରାତି ନାମ..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-          <FaSearch className="absolute top-3 left-3 text-gray-400" />
         </div>
 
-        {/* Product List */}
-        <div className="mt-6 border border-gray-300 rounded-lg overflow-hidden">
+        {/* Table */}
+        <div className=" rounded-lg overflow-hidden bg-white shadow">
           {/* Header */}
-          <div className="grid grid-cols-3 bg-black text-white font-semibold text-center p-2">
-            <div>ତେଜରାତି ନାମ</div>
-            <div>Price</div>
-            <div>Actions</div>
+          <div className="grid grid-cols-2 text-center items-center bg-blue-500 text-white font-semibold border-b border-gray-300 "   >
+            <div className="border-r border-gray-300 flex items-center justify-center " style={{ minHeight: "50px" }}>ତେଜରାତି ନାମ</div>
+            <div className="flex items-center justify-center" style={{ minHeight: "50px" }}>Price</div>
           </div>
 
-          {/* List Body */}
-          <div className="max-h-[60vh] overflow-y-auto">
-            {loading && (
-              <div className="text-center p-10 text-gray-500">
-                <div className="text-2xl animate-spin">🌀</div>
-                Loading...
+          {/* Rows */}
+          {filteredProducts.map((p) => (
+            <div
+              key={p.id}
+              className="grid grid-cols-2 border-b border-gray-300 cursor-pointer hover:bg-gray-100"
+              onClick={() => openModal(p)}
+              style={{ minHeight: "50px" }} // ensures uniform row height
+            >
+              {/* Product Name Column */}
+              <div className="text-black  pl-5 border-b border-gray-300 flex items-center">
+                {p.name}
               </div>
-            )}
 
-            {!loading && filteredProducts.length === 0 && (
-              <div className="text-center p-10 text-gray-500">
-                No products found.
+              {/* Price Column */}
+              <div className="flex items-center font-semibold justify-center border-l text-red-600 border-gray-300">
+                ₹{p.price}
               </div>
-            )}
+            </div>
+          ))}
+        </div>
 
-            {!loading &&
-              filteredProducts.map((p) => (
-                <div
-                  key={p.id}
-                  className="grid grid-cols-3 items-center text-center p-3 border-b border-gray-200 last:border-b-0 bg-white"
+      </div>
+
+      {/* Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-lg p-6 w-[350px] relative">
+            <button
+              onClick={clearModal}
+              className="absolute top-3 right-3 text-gray-500 hover:text-red-600 text-xl"
+            >
+              <FaTimes />
+            </button>
+
+            <h3 className="text-xl font-semibold text-center mb-4">
+              {selectedProduct ? "Edit Product" : "Add Product"}
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block mb-1  text-black font-semibold">
+                  ତେଜରାତି ନାମ
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full border px-3 py-2 rounded-lg bg-gray-50"
+                />
+              </div>
+
+              <div>
+                <label className="block mb-1  text-black font-semibold">
+                  Price
+                </label>
+                <input
+                  type="number"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  className="w-full border px-3 py-2 rounded-lg bg-gray-50"
+                />
+              </div>
+
+              <div className="flex justify-between gap-2">
+                {/* Add or Update */}
+                <button
+                  onClick={handleSubmit}
+                  className={`flex-1 py-2 rounded-lg font-semibold transition-colors duration-200 text-white ${selectedProduct ? "bg-blue-600 hover:bg-blue-700" : "bg-green-500 hover:bg-green-600"
+                    }`}
                 >
-                  <div className="font-semibold text-gray-800">{p.name}</div>
-                  <div className="text-gray-700 font-medium">₹{p.price}</div>
-                  <div className="flex justify-center gap-2">
-                    <button
-                      onClick={() => handleEdit(p)}
-                      disabled={loading}
-                      className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm disabled:bg-gray-400"
-                    >
-                      <FaEdit />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(p.id)}
-                      disabled={loading}
-                      className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm disabled:bg-gray-400"
-                    >
-                      <FaTrash />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                  {selectedProduct ? "Update" : "Add"}
+                </button>
+
+                {/* Delete */}
+                {selectedProduct && (
+                  <button
+                    onClick={handleDelete}
+                    className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg font-semibold transition-colors duration-200"
+                  >
+                    Delete
+                  </button>
+                )}
+
+                {/* Cancel */}
+                {/* <button
+                  onClick={clearModal}
+                  className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 py-2 rounded-lg font-semibold transition-colors duration-200"
+                >
+                  Cancel
+                </button> */}
+              </div>
+
+
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
